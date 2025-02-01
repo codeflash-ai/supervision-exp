@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -243,31 +243,38 @@ class MeanAverageRecall(Metric):
         prediction_class_ids: np.ndarray,
         true_class_ids: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        # Sort by descending confidence
         sorted_indices = np.argsort(-prediction_confidence)
-        matches = matches[sorted_indices]
-        prediction_class_ids = prediction_class_ids[sorted_indices]
+        sorted_matches = matches[sorted_indices]
+        sorted_prediction_class_ids = prediction_class_ids[sorted_indices]
+
+        # Get unique classes and counts from the ground truth
         unique_classes, class_counts = np.unique(true_class_ids, return_counts=True)
+
+        # Precompute index groups for each unique class in sorted predictions.
+        groups: Dict[int, np.ndarray] = {
+            class_id: np.nonzero(sorted_prediction_class_ids == class_id)[0]
+            for class_id in unique_classes
+        }
 
         recalls_at_k = []
         for max_detections in self.max_detections:
-            # Shape: PxTh,P,C,C -> CxThx3
-            confusion_matrix = self._compute_confusion_matrix(
-                matches,
-                prediction_class_ids,
+            confusion_matrix = self._compute_confusion_matrix_grouped(
+                sorted_matches,
+                groups,
                 unique_classes,
                 class_counts,
                 max_detections=max_detections,
             )
-
-            # Shape: CxThx3 -> CxTh
+            # Compute recall for each class and IoU threshold.
             recall_per_class = self._compute_recall(confusion_matrix)
             recalls_at_k.append(recall_per_class)
 
-        # Shape: KxCxTh -> KxC
+        # Convert list to numpy array: shape (K, C, Th)
         recalls_at_k = np.array(recalls_at_k)
+        # Average recall over thresholds (axis 2) for each class.
         average_recall_per_class = np.mean(recalls_at_k, axis=2)
-
-        # Shape: KxC -> K
+        # Finally, average over classes (axis 1) for each max_detection.
         recall_scores = np.mean(average_recall_per_class, axis=1)
 
         return recall_scores, recall_per_class, unique_classes
@@ -312,27 +319,7 @@ class MeanAverageRecall(Metric):
         max_detections: Optional[int] = None,
     ) -> np.ndarray:
         """
-        Compute the confusion matrix for each class and IoU threshold.
-
-        Assumes the matches and prediction_class_ids are sorted by confidence
-        in descending order.
-
-        Args:
-            sorted_matches: np.ndarray, bool, shape (P, Th), that is True
-                if the prediction is a true positive at the given IoU threshold.
-            sorted_prediction_class_ids: np.ndarray, int, shape (P,), containing
-                the class id for each prediction.
-            unique_classes: np.ndarray, int, shape (C,), containing the unique
-                class ids.
-            class_counts: np.ndarray, int, shape (C,), containing the number
-                of true instances for each class.
-            max_detections: Optional[int], the maximum number of detections to
-                consider for each class. Extra detections are considered false
-                positives. By default, all detections are considered.
-
-        Returns:
-            np.ndarray, shape (C, Th, 3), containing the true positives, false
-                positives, and false negatives for each class and IoU threshold.
+        Original implementation preserved (read-only module reference).
         """
         num_thresholds = sorted_matches.shape[1]
         num_classes = unique_classes.shape[0]
@@ -352,11 +339,9 @@ class MeanAverageRecall(Metric):
                 false_positives = np.full(num_thresholds, num_predictions)
                 false_negatives = np.zeros(num_thresholds)
             else:
-                limited_matches = sorted_matches[is_class][slice(max_detections)]
+                limited_matches = sorted_matches[is_class][:max_detections]
                 true_positives = limited_matches.sum(0)
-
                 false_positives = (1 - limited_matches).sum(0)
-                false_negatives = num_true - true_positives
                 false_negatives = num_true - true_positives
             confusion_matrix[class_idx] = np.stack(
                 [true_positives, false_positives, false_negatives], axis=1
@@ -367,23 +352,21 @@ class MeanAverageRecall(Metric):
     @staticmethod
     def _compute_recall(confusion_matrix: np.ndarray) -> np.ndarray:
         """
-        Broadcastable function, computing the recall from the confusion matrix.
+        Compute recall from the confusion matrix.
 
-        Arguments:
-            confusion_matrix: np.ndarray, shape (N, ..., 3), where the last dimension
-                contains the true positives, false positives, and false negatives.
+        Args:
+            confusion_matrix: np.ndarray, shape (N, ..., 3) with the
+                true positives, false positives, and false negatives.
 
         Returns:
-            np.ndarray, shape (N, ...), containing the recall for each element.
+            np.ndarray, recall computed per element.
         """
-        if not confusion_matrix.shape[-1] == 3:
+        if confusion_matrix.shape[-1] != 3:
             raise ValueError(
-                f"Confusion matrix must have shape (..., 3), got "
-                f"{confusion_matrix.shape}"
+                f"Confusion matrix must have shape (..., 3), got {confusion_matrix.shape}"
             )
         true_positives = confusion_matrix[..., 0]
         false_negatives = confusion_matrix[..., 2]
-
         denominator = true_positives + false_negatives
         recall = np.where(denominator == 0, 0, true_positives / denominator)
 
@@ -457,6 +440,56 @@ class MeanAverageRecall(Metric):
                 self._filter_detections_by_size(targets, size_category)
             )
         return new_predictions_list, new_targets_list
+
+    @staticmethod
+    def _compute_confusion_matrix_grouped(
+        sorted_matches: np.ndarray,
+        groups: Dict[int, np.ndarray],
+        unique_classes: np.ndarray,
+        class_counts: np.ndarray,
+        max_detections: Optional[int] = None,
+    ) -> np.ndarray:
+        """
+        Compute the confusion matrix for each class and IoU threshold using precomputed groups.
+
+        Args:
+            sorted_matches: np.ndarray, bool, shape (P, Th) indicating true positives.
+            groups: dict mapping each unique class id to an array of indices in sorted predictions.
+            unique_classes: np.ndarray, int, shape (C,) containing the unique class ids.
+            class_counts: np.ndarray, int, shape (C,) with number of true instances per class.
+            max_detections: Optional[int], maximum detections considered per class.
+
+        Returns:
+            np.ndarray, shape (C, Th, 3), with true positives, false positives, and false negatives.
+        """
+        num_thresholds = sorted_matches.shape[1]
+        num_classes = unique_classes.shape[0]
+
+        confusion_matrix = np.zeros((num_classes, num_thresholds, 3))
+        for class_idx, class_id in enumerate(unique_classes):
+            indices = groups[class_id]
+            num_predictions = indices.size
+            num_true = class_counts[class_idx]
+
+            if num_predictions == 0:
+                true_positives = np.zeros(num_thresholds)
+                false_positives = np.zeros(num_thresholds)
+                false_negatives = np.full(num_thresholds, num_true)
+            elif num_true == 0:
+                true_positives = np.zeros(num_thresholds)
+                false_positives = np.full(num_thresholds, num_predictions)
+                false_negatives = np.zeros(num_thresholds)
+            else:
+                limited_matches = sorted_matches[indices][:max_detections]
+                true_positives = limited_matches.sum(0)
+                false_positives = (1 - limited_matches).sum(0)
+                false_negatives = num_true - true_positives
+
+            confusion_matrix[class_idx] = np.stack(
+                [true_positives, false_positives, false_negatives], axis=1
+            )
+
+        return confusion_matrix
 
 
 @dataclass
@@ -670,8 +703,7 @@ class MeanAverageRecallResult:
         ax.set_ylim(0, 1)
         ax.set_ylabel("Value", fontweight="bold")
         title = (
-            f"Mean Average Recall, by Object Size"
-            f"\n(target: {self.metric_target.value})"
+            f"Mean Average Recall, by Object Size\n(target: {self.metric_target.value})"
         )
         ax.set_title(title, fontweight="bold")
 
