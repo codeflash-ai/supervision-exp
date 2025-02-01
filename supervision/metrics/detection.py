@@ -284,47 +284,44 @@ class ConfusionMatrix:
         """
         result_matrix = np.zeros((num_classes + 1, num_classes + 1))
 
-        conf_idx = 5
-        confidence = predictions[:, conf_idx]
-        detection_batch_filtered = predictions[confidence > conf_threshold]
+        detection_batch_filtered = predictions[predictions[:, 5] > conf_threshold]
 
-        class_id_idx = 4
-        true_classes = np.array(targets[:, class_id_idx], dtype=np.int16)
-        detection_classes = np.array(
-            detection_batch_filtered[:, class_id_idx], dtype=np.int16
-        )
-        true_boxes = targets[:, :class_id_idx]
-        detection_boxes = detection_batch_filtered[:, :class_id_idx]
+        true_classes = targets[:, 4].astype(np.int16)
+        detection_classes = detection_batch_filtered[:, 4].astype(np.int16)
+        true_boxes = targets[:, :4]
+        detection_boxes = detection_batch_filtered[:, :4]
 
         iou_batch = box_iou_batch(
             boxes_true=true_boxes, boxes_detection=detection_boxes
         )
-        matched_idx = np.asarray(iou_batch > iou_threshold).nonzero()
+        matches = (iou_batch > iou_threshold).astype(int)
+        matched_idx = np.where(matches)
 
-        if matched_idx[0].shape[0]:
+        if len(matched_idx[0]) > 0:
             matches = np.stack(
                 (matched_idx[0], matched_idx[1], iou_batch[matched_idx]), axis=1
             )
             matches = ConfusionMatrix._drop_extra_matches(matches=matches)
-        else:
-            matches = np.zeros((0, 3))
 
-        matched_true_idx, matched_detection_idx, _ = matches.transpose().astype(
-            np.int16
-        )
+            matched_true_idx, matched_detection_idx, _ = matches.T.astype(np.int16)
+        else:
+            matched_true_idx, matched_detection_idx = np.array([]), np.array([])
 
         for i, true_class_value in enumerate(true_classes):
-            j = matched_true_idx == i
-            if matches.shape[0] > 0 and sum(j) == 1:
+            if np.any(matched_true_idx == i):
                 result_matrix[
-                    true_class_value, detection_classes[matched_detection_idx[j]]
+                    true_class_value,
+                    detection_classes[matched_detection_idx[matched_true_idx == i]],
                 ] += 1  # TP
             else:
                 result_matrix[true_class_value, num_classes] += 1  # FN
 
-        for i, detection_class_value in enumerate(detection_classes):
-            if not any(matched_detection_idx == i):
-                result_matrix[num_classes, detection_class_value] += 1  # FP
+        non_matched_detection_idx = np.setdiff1d(
+            np.arange(len(detection_classes)), matched_detection_idx, assume_unique=True
+        )
+
+        for i in non_matched_detection_idx:
+            result_matrix[num_classes, detection_classes[i]] += 1  # FP
 
         return result_matrix
 
@@ -336,9 +333,11 @@ class ConfusionMatrix:
         """
         if matches.shape[0] > 0:
             matches = matches[matches[:, 2].argsort()[::-1]]
-            matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
+            _, unique_pred_idx = np.unique(matches[:, 1], return_index=True)
+            matches = matches[unique_pred_idx]
             matches = matches[matches[:, 2].argsort()[::-1]]
-            matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+            _, unique_true_idx = np.unique(matches[:, 0], return_index=True)
+            matches = matches[unique_true_idx]
         return matches
 
     @classmethod

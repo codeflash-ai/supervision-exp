@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from itertools import chain
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -75,9 +77,12 @@ def box_iou_batch(boxes_true: np.ndarray, boxes_detection: np.ndarray) -> np.nda
     top_left = np.maximum(boxes_true[:, None, :2], boxes_detection[:, :2])
     bottom_right = np.minimum(boxes_true[:, None, 2:], boxes_detection[:, 2:])
 
-    area_inter = np.prod(np.clip(bottom_right - top_left, a_min=0, a_max=None), 2)
-    ious = area_inter / (area_true[:, None] + area_detection - area_inter)
-    ious = np.nan_to_num(ious)
+    inter_dim = np.clip(bottom_right - top_left, a_min=0, a_max=None)
+    area_inter = inter_dim[:, :, 0] * inter_dim[:, :, 1]
+    union = area_true[:, None] + area_detection - area_inter
+
+    ious = area_inter / union  # element-wise division
+    ious[union <= 0] = 0  # set invalid IOUs to 0
     return ious
 
 
