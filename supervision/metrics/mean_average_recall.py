@@ -248,9 +248,10 @@ class MeanAverageRecall(Metric):
         prediction_class_ids = prediction_class_ids[sorted_indices]
         unique_classes, class_counts = np.unique(true_class_ids, return_counts=True)
 
+        # Initiate recall_at_k list which will store recall for different max_detections
         recalls_at_k = []
+
         for max_detections in self.max_detections:
-            # Shape: PxTh,P,C,C -> CxThx3
             confusion_matrix = self._compute_confusion_matrix(
                 matches,
                 prediction_class_ids,
@@ -259,15 +260,11 @@ class MeanAverageRecall(Metric):
                 max_detections=max_detections,
             )
 
-            # Shape: CxThx3 -> CxTh
             recall_per_class = self._compute_recall(confusion_matrix)
             recalls_at_k.append(recall_per_class)
 
-        # Shape: KxCxTh -> KxC
         recalls_at_k = np.array(recalls_at_k)
         average_recall_per_class = np.mean(recalls_at_k, axis=2)
-
-        # Shape: KxC -> K
         recall_scores = np.mean(average_recall_per_class, axis=1)
 
         return recall_scores, recall_per_class, unique_classes
@@ -343,24 +340,19 @@ class MeanAverageRecall(Metric):
             num_true = class_counts[class_idx]
             num_predictions = is_class.sum()
 
-            if num_predictions == 0:
-                true_positives = np.zeros(num_thresholds)
-                false_positives = np.zeros(num_thresholds)
-                false_negatives = np.full(num_thresholds, num_true)
-            elif num_true == 0:
-                true_positives = np.zeros(num_thresholds)
-                false_positives = np.full(num_thresholds, num_predictions)
-                false_negatives = np.zeros(num_thresholds)
-            else:
-                limited_matches = sorted_matches[is_class][slice(max_detections)]
-                true_positives = limited_matches.sum(0)
+            limited_matches = sorted_matches[is_class][:max_detections]
 
-                false_positives = (1 - limited_matches).sum(0)
-                false_negatives = num_true - true_positives
-                false_negatives = num_true - true_positives
-            confusion_matrix[class_idx] = np.stack(
-                [true_positives, false_positives, false_negatives], axis=1
-            )
+            if num_predictions == 0:
+                confusion_matrix[class_idx, :, 2] = num_true  # false negatives
+            elif num_true == 0:
+                confusion_matrix[class_idx, :, 1] = num_predictions  # false positives
+            else:
+                true_positives = limited_matches.sum(0)
+                false_positives = max_detections - true_positives
+
+                confusion_matrix[class_idx, :, 0] = true_positives
+                confusion_matrix[class_idx, :, 1] = false_positives
+                confusion_matrix[class_idx, :, 2] = num_true - true_positives
 
         return confusion_matrix
 
@@ -376,11 +368,6 @@ class MeanAverageRecall(Metric):
         Returns:
             np.ndarray, shape (N, ...), containing the recall for each element.
         """
-        if not confusion_matrix.shape[-1] == 3:
-            raise ValueError(
-                f"Confusion matrix must have shape (..., 3), got "
-                f"{confusion_matrix.shape}"
-            )
         true_positives = confusion_matrix[..., 0]
         false_negatives = confusion_matrix[..., 2]
 
@@ -670,8 +657,7 @@ class MeanAverageRecallResult:
         ax.set_ylim(0, 1)
         ax.set_ylabel("Value", fontweight="bold")
         title = (
-            f"Mean Average Recall, by Object Size"
-            f"\n(target: {self.metric_target.value})"
+            f"Mean Average Recall, by Object Size\n(target: {self.metric_target.value})"
         )
         ax.set_title(title, fontweight="bold")
 
