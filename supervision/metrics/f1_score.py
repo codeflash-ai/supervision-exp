@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
@@ -411,27 +410,67 @@ class F1Score(Metric):
         self, detections: Detections, size_category: ObjectSizeCategory
     ) -> Detections:
         """Return a copy of detections with contents filtered by object size."""
-        new_detections = deepcopy(detections)
+        # For empty detections or 'ANY' category, simply return a new copy without filtering.
         if detections.is_empty() or size_category == ObjectSizeCategory.ANY:
-            return new_detections
+            return Detections(
+                xyxy=np.copy(detections.xyxy),
+                mask=np.copy(detections.mask) if detections.mask is not None else None,
+                confidence=np.copy(detections.confidence)
+                if detections.confidence is not None
+                else None,
+                class_id=np.copy(detections.class_id)
+                if detections.class_id is not None
+                else None,
+                tracker_id=np.copy(detections.tracker_id)
+                if detections.tracker_id is not None
+                else None,
+                data={k: np.array(v).copy() for k, v in detections.data.items()}
+                if detections.data
+                else {},
+                metadata=detections.metadata.copy()
+                if hasattr(detections.metadata, "copy")
+                else detections.metadata,
+            )
 
-        sizes = get_detection_size_category(new_detections, self._metric_target)
+        # Get size category mask using the original detections (no need for an earlier deepcopy)
+        sizes = get_detection_size_category(detections, self._metric_target)
         size_mask = sizes == size_category.value
 
-        new_detections.xyxy = new_detections.xyxy[size_mask]
-        if new_detections.mask is not None:
-            new_detections.mask = new_detections.mask[size_mask]
-        if new_detections.class_id is not None:
-            new_detections.class_id = new_detections.class_id[size_mask]
-        if new_detections.confidence is not None:
-            new_detections.confidence = new_detections.confidence[size_mask]
-        if new_detections.tracker_id is not None:
-            new_detections.tracker_id = new_detections.tracker_id[size_mask]
-        if new_detections.data is not None:
-            for key, value in new_detections.data.items():
-                new_detections.data[key] = np.array(value)[size_mask]
+        new_xyxy = detections.xyxy[size_mask]
+        new_mask = detections.mask[size_mask] if detections.mask is not None else None
+        new_confidence = (
+            detections.confidence[size_mask]
+            if detections.confidence is not None
+            else None
+        )
+        new_class_id = (
+            detections.class_id[size_mask] if detections.class_id is not None else None
+        )
+        new_tracker_id = (
+            detections.tracker_id[size_mask]
+            if detections.tracker_id is not None
+            else None
+        )
+        new_data = (
+            {key: np.array(value)[size_mask] for key, value in detections.data.items()}
+            if detections.data
+            else {}
+        )
+        new_metadata = (
+            detections.metadata.copy()
+            if hasattr(detections.metadata, "copy")
+            else detections.metadata
+        )
 
-        return new_detections
+        return Detections(
+            xyxy=new_xyxy,
+            mask=new_mask,
+            confidence=new_confidence,
+            class_id=new_class_id,
+            tracker_id=new_tracker_id,
+            data=new_data,
+            metadata=new_metadata,
+        )
 
     def _filter_predictions_and_targets_by_size(
         self,
@@ -442,15 +481,14 @@ class F1Score(Metric):
         """
         Filter predictions and targets by object size category.
         """
-        new_predictions_list = []
-        new_targets_list = []
-        for predictions, targets in zip(predictions_list, targets_list):
-            new_predictions_list.append(
-                self._filter_detections_by_size(predictions, size_category)
-            )
-            new_targets_list.append(
-                self._filter_detections_by_size(targets, size_category)
-            )
+        new_predictions_list = [
+            self._filter_detections_by_size(pred, size_category)
+            for pred in predictions_list
+        ]
+        new_targets_list = [
+            self._filter_detections_by_size(targ, size_category)
+            for targ in targets_list
+        ]
         return new_predictions_list, new_targets_list
 
 
