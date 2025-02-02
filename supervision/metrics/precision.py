@@ -386,29 +386,30 @@ class Precision(Metric):
 
     def _detections_content(self, detections: Detections) -> np.ndarray:
         """Return boxes, masks or oriented bounding boxes from detections."""
-        if self._metric_target == MetricTarget.BOXES:
+        target = self._metric_target  # local caching for performance
+        if target is MetricTarget.BOXES:
             return detections.xyxy
-        if self._metric_target == MetricTarget.MASKS:
-            return (
-                detections.mask
-                if detections.mask is not None
-                else self._make_empty_content()
-            )
-        if self._metric_target == MetricTarget.ORIENTED_BOUNDING_BOXES:
+        if target is MetricTarget.MASKS:
+            mask = detections.mask
+            return mask if mask is not None else self._make_empty_content()
+        if target is MetricTarget.ORIENTED_BOUNDING_BOXES:
             obb = detections.data.get(ORIENTED_BOX_COORDINATES)
-            if obb is not None and len(obb) > 0:
+            if obb:
                 return np.array(obb, dtype=np.float32)
             return self._make_empty_content()
-        raise ValueError(f"Invalid metric target: {self._metric_target}")
+        raise ValueError(f"Invalid metric target: {target}")
 
     def _make_empty_content(self) -> np.ndarray:
-        if self._metric_target == MetricTarget.BOXES:
-            return np.empty((0, 4), dtype=np.float32)
-        if self._metric_target == MetricTarget.MASKS:
-            return np.empty((0, 0, 0), dtype=bool)
-        if self._metric_target == MetricTarget.ORIENTED_BOUNDING_BOXES:
-            return np.empty((0, 4, 2), dtype=np.float32)
-        raise ValueError(f"Invalid metric target: {self._metric_target}")
+        empty_configs = {
+            MetricTarget.BOXES: ((0, 4), np.float32),
+            MetricTarget.MASKS: ((0, 0, 0), bool),
+            MetricTarget.ORIENTED_BOUNDING_BOXES: ((0, 4, 2), np.float32),
+        }
+        config = empty_configs.get(self._metric_target)
+        if config is None:
+            raise ValueError(f"Invalid metric target: {self._metric_target}")
+        shape, dtype = config
+        return np.empty(shape, dtype=dtype)
 
     def _filter_detections_by_size(
         self, detections: Detections, size_category: ObjectSizeCategory
