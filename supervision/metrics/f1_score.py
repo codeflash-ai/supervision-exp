@@ -331,26 +331,27 @@ class F1Score(Metric):
         num_classes = unique_classes.shape[0]
 
         confusion_matrix = np.zeros((num_classes, num_thresholds, 3))
+
         for class_idx, class_id in enumerate(unique_classes):
             is_class = sorted_prediction_class_ids == class_id
             num_true = class_counts[class_idx]
-            num_predictions = is_class.sum()
 
-            if num_predictions == 0:
-                true_positives = np.zeros(num_thresholds)
-                false_positives = np.zeros(num_thresholds)
-                false_negatives = np.full(num_thresholds, num_true)
-            elif num_true == 0:
-                true_positives = np.zeros(num_thresholds)
-                false_positives = np.full(num_thresholds, num_predictions)
-                false_negatives = np.zeros(num_thresholds)
-            else:
-                true_positives = sorted_matches[is_class].sum(0)
-                false_positives = (1 - sorted_matches[is_class]).sum(0)
-                false_negatives = num_true - true_positives
-            confusion_matrix[class_idx] = np.stack(
-                [true_positives, false_positives, false_negatives], axis=1
-            )
+            if not is_class.any():
+                confusion_matrix[class_idx, :, 1] = 0
+                confusion_matrix[class_idx, :, 2] = num_true
+                continue
+
+            matches_class = sorted_matches[is_class]
+            num_predictions = matches_class.shape[0]
+            num_true = class_counts[class_idx]
+
+            true_positives = np.sum(matches_class, axis=0)
+            false_positives = num_predictions - true_positives
+            false_negatives = num_true - true_positives
+
+            confusion_matrix[class_idx, :, 0] = true_positives
+            confusion_matrix[class_idx, :, 1] = false_positives
+            confusion_matrix[class_idx, :, 2] = false_negatives
 
         return confusion_matrix
 
@@ -366,16 +367,15 @@ class F1Score(Metric):
         Returns:
             np.ndarray, shape (N, ...), containing the F1 score for each element.
         """
-        if not confusion_matrix.shape[-1] == 3:
+        if confusion_matrix.shape[-1] != 3:
             raise ValueError(
-                f"Confusion matrix must have shape (..., 3), got "
-                f"{confusion_matrix.shape}"
+                f"Confusion matrix must have shape (..., 3), got {confusion_matrix.shape}"
             )
+
         true_positives = confusion_matrix[..., 0]
         false_positives = confusion_matrix[..., 1]
         false_negatives = confusion_matrix[..., 2]
 
-        # Alternate formula, avoids multiple zero division checks
         denominator = 2 * true_positives + false_positives + false_negatives
         f1_score = np.where(denominator == 0, 0, 2 * true_positives / denominator)
 
