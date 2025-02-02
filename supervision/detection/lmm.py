@@ -1,5 +1,6 @@
 import re
 from enum import Enum
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -42,24 +43,26 @@ def validate_lmm_parameters(
     lmm: Union[LMM, str], result: Any, kwargs: Dict[str, Any]
 ) -> LMM:
     if isinstance(lmm, str):
+        lmm_enum_map = get_lower_lmm_enum_map()
         try:
-            lmm = LMM(lmm.lower())
-        except ValueError:
+            lmm = lmm_enum_map[lmm.lower()]
+        except KeyError:
             raise ValueError(
                 f"Invalid lmm value: {lmm}. Must be one of {[e.value for e in LMM]}"
             )
 
-    if not isinstance(result, RESULT_TYPES[lmm]):
+    result_type = RESULT_TYPES[lmm]
+    if not isinstance(result, result_type):
         raise ValueError(
-            f"Invalid LMM result type: {type(result)}. Must be {RESULT_TYPES[lmm]}"
+            f"Invalid LMM result type: {type(result)}. Must be {result_type}"
         )
 
-    required_args = REQUIRED_ARGUMENTS.get(lmm, [])
+    required_args = REQUIRED_ARGUMENTS[lmm]
     for arg in required_args:
         if arg not in kwargs:
             raise ValueError(f"Missing required argument: {arg}")
 
-    allowed_args = ALLOWED_ARGUMENTS.get(lmm, [])
+    allowed_args = ALLOWED_ARGUMENTS[lmm]
     for arg in kwargs:
         if arg not in allowed_args:
             raise ValueError(f"Argument {arg} is not allowed for {lmm.name}")
@@ -161,18 +164,18 @@ def from_florence_2(
         return xyxy, labels, None, None
 
     if task in ["<REGION_TO_CATEGORY>", "<REGION_TO_DESCRIPTION>"]:
-        assert isinstance(
-            result, str
-        ), f"Expected string as <REGION_TO_CATEGORY> result, got {type(result)}"
+        assert isinstance(result, str), (
+            f"Expected string as <REGION_TO_CATEGORY> result, got {type(result)}"
+        )
 
         if result == "No object detected.":
             return np.empty((0, 4), dtype=np.float32), np.array([]), None, None
 
         pattern = re.compile(r"<loc_(\d+)><loc_(\d+)><loc_(\d+)><loc_(\d+)>")
         match = pattern.search(result)
-        assert (
-            match is not None
-        ), f"Expected string to end in location tags, but got {result}"
+        assert match is not None, (
+            f"Expected string to end in location tags, but got {result}"
+        )
 
         w, h = resolution_wh
         xyxy = np.array([match.groups()], dtype=np.float32)
@@ -182,3 +185,8 @@ def from_florence_2(
         return xyxy, labels, None, None
 
     assert False, f"Unimplemented task: {task}"
+
+
+@lru_cache(maxsize=None)
+def get_lower_lmm_enum_map():
+    return {e.value.lower(): e for e in LMM}
