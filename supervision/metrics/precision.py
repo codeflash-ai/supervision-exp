@@ -388,27 +388,26 @@ class Precision(Metric):
         """Return boxes, masks or oriented bounding boxes from detections."""
         if self._metric_target == MetricTarget.BOXES:
             return detections.xyxy
+
         if self._metric_target == MetricTarget.MASKS:
             return (
                 detections.mask
                 if detections.mask is not None
-                else self._make_empty_content()
+                else self._make_empty_content(dtype=bool, shape=(0, 0, 0))
             )
+
         if self._metric_target == MetricTarget.ORIENTED_BOUNDING_BOXES:
             obb = detections.data.get(ORIENTED_BOX_COORDINATES)
-            if obb is not None and len(obb) > 0:
-                return np.array(obb, dtype=np.float32)
-            return self._make_empty_content()
+            return (
+                np.array(obb, dtype=np.float32)
+                if obb is not None and len(obb) > 0
+                else self._make_empty_content(dtype=np.float32, shape=(0, 4, 2))
+            )
+
         raise ValueError(f"Invalid metric target: {self._metric_target}")
 
     def _make_empty_content(self) -> np.ndarray:
-        if self._metric_target == MetricTarget.BOXES:
-            return np.empty((0, 4), dtype=np.float32)
-        if self._metric_target == MetricTarget.MASKS:
-            return np.empty((0, 0, 0), dtype=bool)
-        if self._metric_target == MetricTarget.ORIENTED_BOUNDING_BOXES:
-            return np.empty((0, 4, 2), dtype=np.float32)
-        raise ValueError(f"Invalid metric target: {self._metric_target}")
+        return np.empty(shape, dtype=dtype)
 
     def _filter_detections_by_size(
         self, detections: Detections, size_category: ObjectSizeCategory
