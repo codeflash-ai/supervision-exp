@@ -401,11 +401,12 @@ class F1Score(Metric):
     def _make_empty_content(self) -> np.ndarray:
         if self._metric_target == MetricTarget.BOXES:
             return np.empty((0, 4), dtype=np.float32)
-        if self._metric_target == MetricTarget.MASKS:
+        elif self._metric_target == MetricTarget.MASKS:
             return np.empty((0, 0, 0), dtype=bool)
-        if self._metric_target == MetricTarget.ORIENTED_BOUNDING_BOXES:
+        elif self._metric_target == MetricTarget.ORIENTED_BOUNDING_BOXES:
             return np.empty((0, 4, 2), dtype=np.float32)
-        raise ValueError(f"Invalid metric target: {self._metric_target}")
+        else:
+            raise ValueError(f"Invalid metric target: {self._metric_target}")
 
     def _filter_detections_by_size(
         self, detections: Detections, size_category: ObjectSizeCategory
