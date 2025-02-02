@@ -255,29 +255,6 @@ class DetectionDataset(BaseDataset):
         Returns:
             (DetectionDataset): A single `DetectionDataset` object containing
             the merged data from the input list.
-
-        Examples:
-            ```python
-            import supervision as sv
-
-            ds_1 = sv.DetectionDataset(...)
-            len(ds_1)
-            # 100
-            ds_1.classes
-            # ['dog', 'person']
-
-            ds_2 = sv.DetectionDataset(...)
-            len(ds_2)
-            # 200
-            ds_2.classes
-            # ['cat']
-
-            ds_merged = sv.DetectionDataset.merge([ds_1, ds_2])
-            len(ds_merged)
-            # 300
-            ds_merged.classes
-            # ['cat', 'dog', 'person']
-            ```
         """
 
         def is_in_memory(dataset: DetectionDataset) -> bool:
@@ -286,8 +263,8 @@ class DetectionDataset(BaseDataset):
         def is_lazy(dataset: DetectionDataset) -> bool:
             return len(dataset._images_in_memory) == 0
 
-        all_in_memory = all([is_in_memory(dataset) for dataset in dataset_list])
-        all_lazy = all([is_lazy(dataset) for dataset in dataset_list])
+        all_in_memory = all(is_in_memory(dataset) for dataset in dataset_list)
+        all_lazy = all(is_lazy(dataset) for dataset in dataset_list)
         if not all_in_memory and not all_lazy:
             raise ValueError(
                 "Merging lazy and in-memory DetectionDatasets is not supported."

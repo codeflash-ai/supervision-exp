@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import os
 import random
@@ -51,30 +53,25 @@ def approximate_mask_with_polygons(
 
 
 def merge_class_lists(class_lists: List[List[str]]) -> List[str]:
-    unique_classes = set()
-
-    for class_list in class_lists:
-        for class_name in class_list:
-            unique_classes.add(class_name)
-
-    return sorted(list(unique_classes))
+    # Use set comprehension to quickly combine all classes then sort them.
+    return sorted({class_name for classes in class_lists for class_name in classes})
 
 
 def build_class_index_mapping(
     source_classes: List[str], target_classes: List[str]
 ) -> Dict[int, int]:
     """Returns the index map of source classes -> target classes."""
-    index_mapping = {}
+    # Precompute a mapping from target class names to their index for O(1) lookups.
+    target_index = {class_name: i for i, class_name in enumerate(target_classes)}
 
+    index_mapping = {}
     for i, class_name in enumerate(source_classes):
-        if class_name not in target_classes:
+        if class_name not in target_index:
             raise ValueError(
                 f"Class {class_name} not found in target classes. "
                 "source_classes must be a subset of target_classes."
             )
-        corresponding_index = target_classes.index(class_name)
-        index_mapping[i] = corresponding_index
-
+        index_mapping[i] = target_index[class_name]
     return index_mapping
 
 
@@ -91,9 +88,14 @@ def map_detections_class_id(
     detections_copy = copy.deepcopy(detections)
 
     if len(detections) > 0:
-        detections_copy.class_id = np.vectorize(source_to_target_mapping.get)(
-            detections_copy.class_id
-        )
+        # Instead of np.vectorize, prepare a lookup array.
+        max_key = max(source_to_target_mapping.keys())
+        mapping_array = np.empty(max_key + 1, dtype=int)
+        # Only fill the elements corresponding to the keys
+        for k, v in source_to_target_mapping.items():
+            mapping_array[k] = v
+        # Use the mapping_array for fast direct indexing.
+        detections_copy.class_id = mapping_array[detections_copy.class_id]
 
     return detections_copy
 
