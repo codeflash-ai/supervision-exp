@@ -21,24 +21,44 @@ def detections_to_tensor(
         detections (sv.Detections): Detections/Targets in the format of sv.Detections
         with_confidence (bool): Whether to include confidence in the tensor
     Returns:
-        (np.ndarray): Detections as numpy tensors as in (xyxy, class_id,
-            confidence) order
+        (np.ndarray): Detections as numpy tensors in (xyxy, class_id, confidence) order
+                      if with_confidence is True otherwise in (xyxy, class_id) order.
     """
     if detections.class_id is None:
         raise ValueError(
             "ConfusionMatrix can only be calculated for Detections with class_id"
         )
 
-    arrays_to_concat = [detections.xyxy, np.expand_dims(detections.class_id, 1)]
+    xyxy = detections.xyxy
+    class_id = detections.class_id
 
     if with_confidence:
         if detections.confidence is None:
             raise ValueError(
                 "ConfusionMatrix can only be calculated for Detections with confidence"
             )
-        arrays_to_concat.append(np.expand_dims(detections.confidence, 1))
+        confidence = detections.confidence
 
-    return np.concatenate(arrays_to_concat, axis=1)
+    # Number of detections and number of columns
+    n = xyxy.shape[0]
+    num_columns = 4 + 1 + (1 if with_confidence else 0)
+
+    # Determine the appropriate output dtype combining all inputs.
+    if with_confidence:
+        out_dtype = np.result_type(xyxy, class_id, confidence)
+    else:
+        out_dtype = np.result_type(xyxy, class_id)
+
+    # Pre-allocate the output array once.
+    result = np.empty((n, num_columns), dtype=out_dtype)
+
+    # Fill the pre-allocated array with existing arrays; using direct slice assignment
+    result[:, :4] = xyxy
+    result[:, 4] = class_id
+    if with_confidence:
+        result[:, 5] = confidence
+
+    return result
 
 
 def validate_input_tensors(predictions: List[np.ndarray], targets: List[np.ndarray]):
@@ -777,15 +797,22 @@ class MeanAveragePrecision:
 
             if matched_indices[0].shape[0]:
                 combined_indices = np.stack(matched_indices, axis=1)
-                iou_values = iou[matched_indices][:, None]
-                matches = np.hstack([combined_indices, iou_values])
 
                 if matched_indices[0].shape[0] > 1:
-                    matches = matches[matches[:, 2].argsort()[::-1]]
-                    matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                    matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+                    matched_ious = iou[matched_indices]
+                    sorted_indices = np.argsort(matched_ious)[::-1]
+                    combined_indices = combined_indices[sorted_indices]
 
-                correct[matches[:, 1].astype(int), i] = True
+                    _, unique_detected_indices = np.unique(
+                        combined_indices[:, 1], return_index=True
+                    )
+                    combined_indices = combined_indices[unique_detected_indices]
+                    _, unique_true_indices = np.unique(
+                        combined_indices[:, 0], return_index=True
+                    )
+                    combined_indices = combined_indices[unique_true_indices]
+
+                correct[combined_indices[:, 1], i] = True
 
         return correct
 
