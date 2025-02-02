@@ -29,16 +29,24 @@ def detections_to_tensor(
             "ConfusionMatrix can only be calculated for Detections with class_id"
         )
 
-    arrays_to_concat = [detections.xyxy, np.expand_dims(detections.class_id, 1)]
-
+    xyxy = detections.xyxy
+    class_id = detections.class_id
     if with_confidence:
-        if detections.confidence is None:
+        confidence = detections.confidence
+        if confidence is None:
             raise ValueError(
                 "ConfusionMatrix can only be calculated for Detections with confidence"
             )
-        arrays_to_concat.append(np.expand_dims(detections.confidence, 1))
+        result = np.empty((xyxy.shape[0], xyxy.shape[1] + 2))
+        result[:, :-2] = xyxy
+        result[:, -2] = class_id
+        result[:, -1] = confidence
+    else:
+        result = np.empty((xyxy.shape[0], xyxy.shape[1] + 1))
+        result[:, :-1] = xyxy
+        result[:, -1] = class_id
 
-    return np.concatenate(arrays_to_concat, axis=1)
+    return result
 
 
 def validate_input_tensors(predictions: List[np.ndarray], targets: List[np.ndarray]):
@@ -777,15 +785,22 @@ class MeanAveragePrecision:
 
             if matched_indices[0].shape[0]:
                 combined_indices = np.stack(matched_indices, axis=1)
-                iou_values = iou[matched_indices][:, None]
-                matches = np.hstack([combined_indices, iou_values])
 
                 if matched_indices[0].shape[0] > 1:
-                    matches = matches[matches[:, 2].argsort()[::-1]]
-                    matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                    matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+                    matched_ious = iou[matched_indices]
+                    sorted_indices = np.argsort(matched_ious)[::-1]
+                    combined_indices = combined_indices[sorted_indices]
 
-                correct[matches[:, 1].astype(int), i] = True
+                    _, unique_detected_indices = np.unique(
+                        combined_indices[:, 1], return_index=True
+                    )
+                    combined_indices = combined_indices[unique_detected_indices]
+                    _, unique_true_indices = np.unique(
+                        combined_indices[:, 0], return_index=True
+                    )
+                    combined_indices = combined_indices[unique_true_indices]
+
+                correct[combined_indices[:, 1], i] = True
 
         return correct
 
