@@ -275,27 +275,37 @@ class F1Score(Metric):
         iou: np.ndarray,
         iou_thresholds: np.ndarray,
     ) -> np.ndarray:
-        num_predictions, num_iou_levels = (
-            predictions_classes.shape[0],
-            iou_thresholds.shape[0],
-        )
+        num_predictions = predictions_classes.shape[0]
+        num_iou_levels = iou_thresholds.shape[0]
         correct = np.zeros((num_predictions, num_iou_levels), dtype=bool)
+        # Compute where the classes match between targets and predictions.
         correct_class = target_classes[:, None] == predictions_classes
 
-        for i, iou_level in enumerate(iou_thresholds):
-            matched_indices = np.where((iou >= iou_level) & correct_class)
+        # Precompute candidate match indices for which the classes are correct
+        target_idxs, prediction_idxs = np.nonzero(correct_class)
+        if target_idxs.size == 0:
+            return correct
+        candidate_matches = np.column_stack((target_idxs, prediction_idxs))
+        candidate_ious = iou[target_idxs, prediction_idxs]
 
-            if matched_indices[0].shape[0]:
-                combined_indices = np.stack(matched_indices, axis=1)
-                iou_values = iou[matched_indices][:, None]
-                matches = np.hstack([combined_indices, iou_values])
-
-                if matched_indices[0].shape[0] > 1:
-                    matches = matches[matches[:, 2].argsort()[::-1]]
-                    matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                    matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
-
-                correct[matches[:, 1].astype(int), i] = True
+        # For each IoU threshold, filter candidate matches
+        for thresh_idx, thresh in enumerate(iou_thresholds):
+            valid = candidate_ious >= thresh
+            if not np.any(valid):
+                continue
+            # Build matches: each row is [target_index, prediction_index, iou_value]
+            matches = np.column_stack((candidate_matches[valid], candidate_ious[valid]))
+            if matches.shape[0] > 1:
+                # Sort by descending IoU value
+                order = np.argsort(matches[:, 2])[::-1]
+                matches = matches[order]
+                # For consistent behavior, select the first occurrence per prediction and then per target
+                _, pred_first_idx = np.unique(matches[:, 1], return_index=True)
+                matches = matches[pred_first_idx]
+                _, target_first_idx = np.unique(matches[:, 0], return_index=True)
+                matches = matches[target_first_idx]
+            # Mark the corresponding predictions as correct for this threshold
+            correct[matches[:, 1].astype(int), thresh_idx] = True
 
         return correct
 
