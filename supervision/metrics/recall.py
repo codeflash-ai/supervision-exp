@@ -279,27 +279,24 @@ class Recall(Metric):
         iou: np.ndarray,
         iou_thresholds: np.ndarray,
     ) -> np.ndarray:
-        num_predictions, num_iou_levels = (
-            predictions_classes.shape[0],
-            iou_thresholds.shape[0],
-        )
+        num_predictions = predictions_classes.shape[0]
+        num_iou_levels = iou_thresholds.shape[0]
         correct = np.zeros((num_predictions, num_iou_levels), dtype=bool)
         correct_class = target_classes[:, None] == predictions_classes
 
         for i, iou_level in enumerate(iou_thresholds):
             matched_indices = np.where((iou >= iou_level) & correct_class)
 
-            if matched_indices[0].shape[0]:
-                combined_indices = np.stack(matched_indices, axis=1)
-                iou_values = iou[matched_indices][:, None]
-                matches = np.hstack([combined_indices, iou_values])
+            if matched_indices[0].size:
+                matches = np.stack(matched_indices, axis=1)
+                iou_values = iou[matched_indices]
+                matches = matches[np.argsort(iou_values)[::-1]]
+                _, unique_indices = np.unique(matches[:, 1], return_index=True)
+                matches = matches[unique_indices]
+                _, unique_indices = np.unique(matches[:, 0], return_index=True)
+                matches = matches[unique_indices]
 
-                if matched_indices[0].shape[0] > 1:
-                    matches = matches[matches[:, 2].argsort()[::-1]]
-                    matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                    matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
-
-                correct[matches[:, 1].astype(int), i] = True
+                correct[matches[:, 1], i] = True
 
         return correct
 
