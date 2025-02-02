@@ -213,9 +213,9 @@ def png_string_to_segmentation_array(png_string: bytes) -> np.ndarray:
         are the height and width of the image. Each unique value in the array
         represents a different object or category.
     """
-    image = Image.open(io.BytesIO(png_string))
-    mask = np.array(image, dtype=np.uint8)
-    return mask[:, :, 0]
+    with Image.open(io.BytesIO(png_string)) as image:
+        mask = np.asarray(image, dtype=np.uint8)
+        return mask[:, :, 0]
 
 
 def append_class_names_to_data(
