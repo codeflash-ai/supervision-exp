@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
@@ -411,27 +410,39 @@ class F1Score(Metric):
         self, detections: Detections, size_category: ObjectSizeCategory
     ) -> Detections:
         """Return a copy of detections with contents filtered by object size."""
-        new_detections = deepcopy(detections)
         if detections.is_empty() or size_category == ObjectSizeCategory.ANY:
-            return new_detections
+            return detections
 
-        sizes = get_detection_size_category(new_detections, self._metric_target)
+        sizes = get_detection_size_category(detections, self._metric_target)
         size_mask = sizes == size_category.value
 
-        new_detections.xyxy = new_detections.xyxy[size_mask]
-        if new_detections.mask is not None:
-            new_detections.mask = new_detections.mask[size_mask]
-        if new_detections.class_id is not None:
-            new_detections.class_id = new_detections.class_id[size_mask]
-        if new_detections.confidence is not None:
-            new_detections.confidence = new_detections.confidence[size_mask]
-        if new_detections.tracker_id is not None:
-            new_detections.tracker_id = new_detections.tracker_id[size_mask]
-        if new_detections.data is not None:
-            for key, value in new_detections.data.items():
-                new_detections.data[key] = np.array(value)[size_mask]
+        filtered_data = {
+            "xyxy": detections.xyxy[size_mask],
+            "mask": detections.mask[size_mask] if detections.mask is not None else None,
+            "confidence": detections.confidence[size_mask]
+            if detections.confidence is not None
+            else None,
+            "class_id": detections.class_id[size_mask]
+            if detections.class_id is not None
+            else None,
+            "tracker_id": detections.tracker_id[size_mask]
+            if detections.tracker_id is not None
+            else None,
+            "data": {
+                key: np.array(value)[size_mask]
+                for key, value in detections.data.items()
+            },
+        }
 
-        return new_detections
+        return Detections(
+            xyxy=filtered_data["xyxy"],
+            mask=filtered_data["mask"],
+            confidence=filtered_data["confidence"],
+            class_id=filtered_data["class_id"],
+            tracker_id=filtered_data["tracker_id"],
+            data=filtered_data["data"],
+            metadata=detections.metadata,
+        )
 
     def _filter_predictions_and_targets_by_size(
         self,
@@ -442,15 +453,14 @@ class F1Score(Metric):
         """
         Filter predictions and targets by object size category.
         """
-        new_predictions_list = []
-        new_targets_list = []
-        for predictions, targets in zip(predictions_list, targets_list):
-            new_predictions_list.append(
-                self._filter_detections_by_size(predictions, size_category)
-            )
-            new_targets_list.append(
-                self._filter_detections_by_size(targets, size_category)
-            )
+        new_predictions_list = [
+            self._filter_detections_by_size(predictions, size_category)
+            for predictions in predictions_list
+        ]
+        new_targets_list = [
+            self._filter_detections_by_size(targets, size_category)
+            for targets in targets_list
+        ]
         return new_predictions_list, new_targets_list
 
 
