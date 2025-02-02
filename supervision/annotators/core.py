@@ -1493,15 +1493,17 @@ class RichLabelAnnotator(BaseAnnotator):
         if custom_labels is not None:
             return custom_labels
 
-        labels = []
-        for idx in range(len(detections)):
-            if CLASS_NAME_DATA_FIELD in detections.data:
-                labels.append(detections.data[CLASS_NAME_DATA_FIELD][idx])
-            elif detections.class_id is not None:
-                labels.append(str(detections.class_id[idx]))
-            else:
-                labels.append(str(idx))
-        return labels
+        n = len(detections)
+        data = detections.data
+        if CLASS_NAME_DATA_FIELD in data:
+            # Assuming detections.data[CLASS_NAME_DATA_FIELD] is indexable; slice it once.
+            return data[CLASS_NAME_DATA_FIELD][:n]
+        elif detections.class_id is not None:
+            # Convert each detection's class_id to string in one go using map.
+            return list(map(str, detections.class_id[:n]))
+        else:
+            # Generate labels from 0 to n-1.
+            return list(map(str, range(n)))
 
     def _draw_labels(
         self,
