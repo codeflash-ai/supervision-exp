@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 from typing import Any, Dict, Optional
 
@@ -161,11 +163,15 @@ def process_transformers_v4_panoptic_segmentation_result(
     """
     segments_info = segmentation_result["segments_info"]
     png_string = segmentation_result["png_string"]
+
     class_ids = np.array([segment["category_id"] for segment in segments_info])
     segmentation_array = png_string_to_segmentation_array(png_string=png_string)
-    masks = np.array(
-        [segmentation_array == segment["id"] for segment in segments_info]
-    ).astype(bool)
+
+    # Use vectorized broadcasting to generate masks.
+    segment_ids = np.array([segment["id"] for segment in segments_info])
+    # segmentation_array shape is (H, W). Compare against each segment id using broadcasting.
+    masks = segmentation_array[None, :, :] == segment_ids[:, None, None]
+
     data = append_class_names_to_data(class_ids, id2label, {})
 
     return dict(
@@ -241,6 +247,7 @@ def append_class_names_to_data(
         data = {}
 
     if id2label is not None:
+        # Direct conversion using list comprehension remains efficient for small arrays.
         class_names = np.array([id2label[class_id] for class_id in class_ids])
         data[CLASS_NAME_DATA_FIELD] = class_names
 
