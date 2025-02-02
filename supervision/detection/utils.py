@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from itertools import chain
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -66,19 +68,21 @@ def box_iou_batch(boxes_true: np.ndarray, boxes_detection: np.ndarray) -> np.nda
             `M` is number of detected objects.
     """
 
-    def box_area(box):
-        return (box[2] - box[0]) * (box[3] - box[1])
-
-    area_true = box_area(boxes_true.T)
-    area_detection = box_area(boxes_detection.T)
+    area_true = (boxes_true[:, 2] - boxes_true[:, 0]) * (
+        boxes_true[:, 3] - boxes_true[:, 1]
+    )
+    area_detection = (boxes_detection[:, 2] - boxes_detection[:, 0]) * (
+        boxes_detection[:, 3] - boxes_detection[:, 1]
+    )
 
     top_left = np.maximum(boxes_true[:, None, :2], boxes_detection[:, :2])
     bottom_right = np.minimum(boxes_true[:, None, 2:], boxes_detection[:, 2:])
 
-    area_inter = np.prod(np.clip(bottom_right - top_left, a_min=0, a_max=None), 2)
-    ious = area_inter / (area_true[:, None] + area_detection - area_inter)
-    ious = np.nan_to_num(ious)
-    return ious
+    inter_dims = np.clip(bottom_right - top_left, a_min=0, a_max=None)
+    area_inter = inter_dims[:, :, 0] * inter_dims[:, :, 1]
+    union_area = area_true[:, None] + area_detection - area_inter
+    ious = area_inter / union_area
+    return np.nan_to_num(ious, copy=False)
 
 
 def _mask_iou_batch_split(
@@ -365,23 +369,30 @@ def mask_to_xyxy(masks: np.ndarray) -> np.ndarray:
     Converts a 3D `np.array` of 2D bool masks into a 2D `np.array` of bounding boxes.
 
     Parameters:
-        masks (np.ndarray): A 3D `np.array` of shape `(N, W, H)`
-            containing 2D bool masks
+        masks (np.ndarray): A 3D `np.array` of shape `(N, H, W)`
+            containing 2D bool masks.
 
     Returns:
         np.ndarray: A 2D `np.array` of shape `(N, 4)` containing the bounding boxes
-            `(x_min, y_min, x_max, y_max)` for each mask
+            `(x_min, y_min, x_max, y_max)` for each mask.
     """
     n = masks.shape[0]
     xyxy = np.zeros((n, 4), dtype=int)
 
-    for i, mask in enumerate(masks):
-        rows, cols = np.where(mask)
+    for i in range(n):
+        mask = masks[i]
+        if not mask.any():
+            continue
 
-        if len(rows) > 0 and len(cols) > 0:
-            x_min, x_max = np.min(cols), np.max(cols)
-            y_min, y_max = np.min(rows), np.max(rows)
-            xyxy[i, :] = [x_min, y_min, x_max, y_max]
+        # Compute bounding box by reducing along each axis.
+        rows = mask.any(axis=1)
+        cols = mask.any(axis=0)
+        y_min = np.argmax(rows)
+        y_max = mask.shape[0] - np.argmax(rows[::-1]) - 1
+        x_min = np.argmax(cols)
+        x_max = mask.shape[1] - np.argmax(cols[::-1]) - 1
+
+        xyxy[i, :] = [x_min, y_min, x_max, y_max]
 
     return xyxy
 
