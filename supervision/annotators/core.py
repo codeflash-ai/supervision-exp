@@ -1219,14 +1219,11 @@ class LabelAnnotator(BaseAnnotator):
         if custom_labels is not None:
             return custom_labels
 
-        labels = []
-        for idx in range(len(detections)):
-            if CLASS_NAME_DATA_FIELD in detections.data:
-                labels.append(detections.data[CLASS_NAME_DATA_FIELD][idx])
-            elif detections.class_id is not None:
-                labels.append(str(detections.class_id[idx]))
-            else:
-                labels.append(str(idx))
+        labels_data = detections.data.get(CLASS_NAME_DATA_FIELD)
+        labels = [
+            str(detections.class_id[idx]) if labels_data is None else labels_data[idx]
+            for idx in range(len(detections))
+        ]
         return labels
 
     def _draw_labels(
