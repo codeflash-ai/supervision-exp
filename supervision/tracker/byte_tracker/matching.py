@@ -14,12 +14,15 @@ if TYPE_CHECKING:
 def indices_to_matches(
     cost_matrix: np.ndarray, indices: np.ndarray, thresh: float
 ) -> Tuple[np.ndarray, tuple, tuple]:
-    matched_cost = cost_matrix[tuple(zip(*indices))]
-    matched_mask = matched_cost <= thresh
+    matched_mask = cost_matrix[tuple(indices.T)] <= thresh
 
     matches = indices[matched_mask]
-    unmatched_a = tuple(set(range(cost_matrix.shape[0])) - set(matches[:, 0]))
-    unmatched_b = tuple(set(range(cost_matrix.shape[1])) - set(matches[:, 1]))
+
+    matched_rows = set(matches[:, 0])
+    matched_cols = set(matches[:, 1])
+    unmatched_a = tuple(i for i in range(cost_matrix.shape[0]) if i not in matched_rows)
+    unmatched_b = tuple(i for i in range(cost_matrix.shape[1]) if i not in matched_cols)
+
     return matches, unmatched_a, unmatched_b
 
 
