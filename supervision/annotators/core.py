@@ -1493,15 +1493,15 @@ class RichLabelAnnotator(BaseAnnotator):
         if custom_labels is not None:
             return custom_labels
 
-        labels = []
-        for idx in range(len(detections)):
-            if CLASS_NAME_DATA_FIELD in detections.data:
-                labels.append(detections.data[CLASS_NAME_DATA_FIELD][idx])
-            elif detections.class_id is not None:
-                labels.append(str(detections.class_id[idx]))
-            else:
-                labels.append(str(idx))
-        return labels
+        data = detections.data.get(CLASS_NAME_DATA_FIELD)
+        class_ids = detections.class_id
+
+        return [
+            data[idx]
+            if data
+            else (str(class_ids[idx]) if class_ids is not None else str(idx))
+            for idx in range(len(detections))
+        ]
 
     def _draw_labels(
         self,
