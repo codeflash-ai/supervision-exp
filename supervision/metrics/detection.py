@@ -734,17 +734,25 @@ class MeanAveragePrecision:
         Returns:
             float: Average precision.
         """
-        extended_recall = np.concatenate(([0.0], recall, [1.0]))
-        extended_precision = np.concatenate(([1.0], precision, [0.0]))
-        max_accumulated_precision = np.flip(
-            np.maximum.accumulate(np.flip(extended_precision))
-        )
+        # Using pre-allocated arrays to avoid repeated list concatenation
+        extended_recall = np.zeros(len(recall) + 2)
+        extended_precision = np.zeros(len(precision) + 2)
+
+        extended_recall[1:-1] = recall
+        extended_recall[-1] = 1.0
+
+        extended_precision[0] = 1.0
+        extended_precision[1:-1] = precision
+
+        max_accumulated_precision = np.maximum.accumulate(extended_precision[::-1])[
+            ::-1
+        ]
         interpolated_recall_levels = np.linspace(0, 1, 101)
         interpolated_precision = np.interp(
             interpolated_recall_levels, extended_recall, max_accumulated_precision
         )
-        average_precision = np.trapz(interpolated_precision, interpolated_recall_levels)
-        return average_precision
+
+        return np.trapz(interpolated_precision, interpolated_recall_levels)
 
     @staticmethod
     def _match_detection_batch(
@@ -777,15 +785,22 @@ class MeanAveragePrecision:
 
             if matched_indices[0].shape[0]:
                 combined_indices = np.stack(matched_indices, axis=1)
-                iou_values = iou[matched_indices][:, None]
-                matches = np.hstack([combined_indices, iou_values])
 
                 if matched_indices[0].shape[0] > 1:
-                    matches = matches[matches[:, 2].argsort()[::-1]]
-                    matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                    matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+                    matched_ious = iou[matched_indices]
+                    sorted_indices = np.argsort(matched_ious)[::-1]
+                    combined_indices = combined_indices[sorted_indices]
 
-                correct[matches[:, 1].astype(int), i] = True
+                    _, unique_detected_indices = np.unique(
+                        combined_indices[:, 1], return_index=True
+                    )
+                    combined_indices = combined_indices[unique_detected_indices]
+                    _, unique_true_indices = np.unique(
+                        combined_indices[:, 0], return_index=True
+                    )
+                    combined_indices = combined_indices[unique_true_indices]
+
+                correct[combined_indices[:, 1], i] = True
 
         return correct
 
@@ -816,20 +831,20 @@ class MeanAveragePrecision:
         prediction_class_ids = prediction_class_ids[sorted_indices]
 
         unique_classes, class_counts = np.unique(true_class_ids, return_counts=True)
-        num_classes = unique_classes.shape[0]
-
-        average_precisions = np.zeros((num_classes, matches.shape[1]))
+        average_precisions = np.zeros((unique_classes.shape[0], matches.shape[1]))
 
         for class_idx, class_id in enumerate(unique_classes):
             is_class = prediction_class_ids == class_id
             total_true = class_counts[class_idx]
-            total_prediction = is_class.sum()
-
-            if total_prediction == 0 or total_true == 0:
+            if total_true == 0:
                 continue
 
-            false_positives = (1 - matches[is_class]).cumsum(0)
-            true_positives = matches[is_class].cumsum(0)
+            total_prediction = is_class.sum()
+            if total_prediction == 0:
+                continue
+
+            false_positives = np.cumsum(1 - matches[is_class], axis=0)
+            true_positives = np.cumsum(matches[is_class], axis=0)
             recall = true_positives / (total_true + eps)
             precision = true_positives / (true_positives + false_positives)
 
