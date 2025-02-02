@@ -279,27 +279,40 @@ class Recall(Metric):
         iou: np.ndarray,
         iou_thresholds: np.ndarray,
     ) -> np.ndarray:
-        num_predictions, num_iou_levels = (
-            predictions_classes.shape[0],
-            iou_thresholds.shape[0],
-        )
+        num_predictions = predictions_classes.shape[0]
+        num_iou_levels = iou_thresholds.shape[0]
         correct = np.zeros((num_predictions, num_iou_levels), dtype=bool)
+        # Create pre-computed boolean mask for class matching.
+        # Shape is (num_targets, num_predictions)
         correct_class = target_classes[:, None] == predictions_classes
 
-        for i, iou_level in enumerate(iou_thresholds):
-            matched_indices = np.where((iou >= iou_level) & correct_class)
+        for i, threshold in enumerate(iou_thresholds):
+            # Compute the valid matches for the current IoU threshold.
+            mask = (iou >= threshold) & correct_class
+            if not mask.any():
+                continue
 
-            if matched_indices[0].shape[0]:
-                combined_indices = np.stack(matched_indices, axis=1)
-                iou_values = iou[matched_indices][:, None]
-                matches = np.hstack([combined_indices, iou_values])
+            # Get indices directly from the boolean mask.
+            target_idx, pred_idx = np.nonzero(mask)
+            iou_vals = iou[target_idx, pred_idx]
 
-                if matched_indices[0].shape[0] > 1:
-                    matches = matches[matches[:, 2].argsort()[::-1]]
-                    matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                    matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+            # Sort matches by IoU value (highest first)
+            order = np.argsort(iou_vals)[::-1]
+            target_idx = target_idx[order]
+            pred_idx = pred_idx[order]
 
-                correct[matches[:, 1].astype(int), i] = True
+            # Apply unique filtering on prediction indices.
+            _, unique_pred_indices = np.unique(pred_idx, return_index=True)
+            target_idx = target_idx[unique_pred_indices]
+            pred_idx = pred_idx[unique_pred_indices]
+
+            # Apply unique filtering on target indices.
+            _, unique_target_indices = np.unique(target_idx, return_index=True)
+            target_idx = target_idx[unique_target_indices]
+            pred_idx = pred_idx[unique_target_indices]
+
+            # Mark selected predictions as correct for this threshold.
+            correct[pred_idx, i] = True
 
         return correct
 
