@@ -252,19 +252,19 @@ class Recall(Metric):
         prediction_class_ids = prediction_class_ids[sorted_indices]
         unique_classes, class_counts = np.unique(true_class_ids, return_counts=True)
 
-        # Shape: PxTh,P,C,C -> CxThx3
+        # Vectorized computation of confusion matrix
         confusion_matrix = self._compute_confusion_matrix(
             matches, prediction_class_ids, unique_classes, class_counts
         )
 
-        # Shape: CxThx3 -> CxTh
+        # Compute per-class recalls from confusion matrix
         recall_per_class = self._compute_recall(confusion_matrix)
 
-        # Shape: CxTh -> Th
         if self.averaging_method == AveragingMethod.MACRO:
             recall_scores = np.mean(recall_per_class, axis=0)
         elif self.averaging_method == AveragingMethod.MICRO:
-            confusion_matrix_merged = confusion_matrix.sum(0)
+            # Merge classes by summing across classes and compute recall
+            confusion_matrix_merged = confusion_matrix.sum(axis=0)
             recall_scores = self._compute_recall(confusion_matrix_merged)
         elif self.averaging_method == AveragingMethod.WEIGHTED:
             class_counts = class_counts.astype(np.float32)
@@ -311,76 +311,62 @@ class Recall(Metric):
         class_counts: np.ndarray,
     ) -> np.ndarray:
         """
-        Compute the confusion matrix for each class and IoU threshold.
-
-        Assumes the matches and prediction_class_ids are sorted by confidence
-        in descending order.
+        Optimized vectorized method to compute the confusion matrix.
+        Instead of iterating over each class, a boolean mask matrix is used to
+        perform matrix multiplications over predictions.
 
         Arguments:
-            sorted_matches: np.ndarray, bool, shape (P, Th), that is True
-                if the prediction is a true positive at the given IoU threshold.
-            sorted_prediction_class_ids: np.ndarray, int, shape (P,), containing
-                the class id for each prediction.
-            unique_classes: np.ndarray, int, shape (C,), containing the unique
-                class ids.
-            class_counts: np.ndarray, int, shape (C,), containing the number
-                of true instances for each class.
+            sorted_matches: np.ndarray of shape (P, Th)
+            sorted_prediction_class_ids: np.ndarray of shape (P,)
+            unique_classes: np.ndarray of shape (C,)
+            class_counts: np.ndarray of shape (C,)
 
         Returns:
-            np.ndarray, shape (C, Th, 3), containing the true positives, false
-                positives, and false negatives for each class and IoU threshold.
+            np.ndarray of shape (C, Th, 3) containing true positives, false
+            positives, and false negatives per class and IoU threshold.
         """
-
         num_thresholds = sorted_matches.shape[1]
         num_classes = unique_classes.shape[0]
 
-        confusion_matrix = np.zeros((num_classes, num_thresholds, 3))
-        for class_idx, class_id in enumerate(unique_classes):
-            is_class = sorted_prediction_class_ids == class_id
-            num_true = class_counts[class_idx]
-            num_predictions = is_class.sum()
+        # Build boolean matrix for class membership: shape (C, P)
+        is_class_matrix = (
+            sorted_prediction_class_ids[None, :] == unique_classes[:, None]
+        )
 
-            if num_predictions == 0:
-                true_positives = np.zeros(num_thresholds)
-                false_positives = np.zeros(num_thresholds)
-                false_negatives = np.full(num_thresholds, num_true)
-            elif num_true == 0:
-                true_positives = np.zeros(num_thresholds)
-                false_positives = np.full(num_thresholds, num_predictions)
-                false_negatives = np.zeros(num_thresholds)
-            else:
-                true_positives = sorted_matches[is_class].sum(0)
-                false_positives = (1 - sorted_matches[is_class]).sum(0)
-                false_negatives = num_true - true_positives
-            confusion_matrix[class_idx] = np.stack(
-                [true_positives, false_positives, false_negatives], axis=1
-            )
+        # Compute true positives: (C, P) @ (P, Th) -> (C, Th)
+        true_positives = is_class_matrix.astype(np.int32) @ sorted_matches
+        # Compute false positives: predictions for each class that did not match.
+        false_positives = is_class_matrix.astype(np.int32) @ (1 - sorted_matches)
+        # Compute false negatives using the number of ground truth boxes per class.
+        false_negatives = class_counts[:, None] - true_positives
 
+        # Stack along the last dimension: shape (C, Th, 3)
+        confusion_matrix = np.stack(
+            [true_positives, false_positives, false_negatives], axis=2
+        )
         return confusion_matrix
 
     @staticmethod
     def _compute_recall(confusion_matrix: np.ndarray) -> np.ndarray:
         """
-        Broadcastable function, computing the recall from the confusion matrix.
+        Compute the recall from the confusion matrix.
 
         Arguments:
-            confusion_matrix: np.ndarray, shape (N, ..., 3), where the last dimension
-                contains the true positives, false positives, and false negatives.
+            confusion_matrix: np.ndarray with shape (..., 3) where the last dimension
+                              contains [true positives, false positives, false negatives].
 
         Returns:
-            np.ndarray, shape (N, ...), containing the recall for each element.
+            np.ndarray of shape (...) with the computed recall values.
         """
-        if not confusion_matrix.shape[-1] == 3:
+        if confusion_matrix.shape[-1] != 3:
             raise ValueError(
-                f"Confusion matrix must have shape (..., 3), got "
-                f"{confusion_matrix.shape}"
+                f"Confusion matrix must have shape (..., 3), got {confusion_matrix.shape}"
             )
         true_positives = confusion_matrix[..., 0]
         false_negatives = confusion_matrix[..., 2]
 
         denominator = true_positives + false_negatives
         recall = np.where(denominator == 0, 0, true_positives / denominator)
-
         return recall
 
     def _detections_content(self, detections: Detections) -> np.ndarray:
