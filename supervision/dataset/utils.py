@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import os
 import random
@@ -64,18 +66,16 @@ def build_class_index_mapping(
     source_classes: List[str], target_classes: List[str]
 ) -> Dict[int, int]:
     """Returns the index map of source classes -> target classes."""
-    index_mapping = {}
-
-    for i, class_name in enumerate(source_classes):
-        if class_name not in target_classes:
-            raise ValueError(
-                f"Class {class_name} not found in target classes. "
-                "source_classes must be a subset of target_classes."
-            )
-        corresponding_index = target_classes.index(class_name)
-        index_mapping[i] = corresponding_index
-
-    return index_mapping
+    if not set(source_classes).issubset(target_classes):
+        diff = set(source_classes) - set(target_classes)
+        raise ValueError(
+            f"Classes {diff} not found in target classes. "
+            "source_classes must be a subset of target_classes."
+        )
+    return {
+        i: target_classes.index(class_name)
+        for i, class_name in enumerate(source_classes)
+    }
 
 
 def map_detections_class_id(
@@ -83,16 +83,18 @@ def map_detections_class_id(
 ) -> Detections:
     if detections.class_id is None:
         raise ValueError("Detections must have class_id attribute.")
-    if set(np.unique(detections.class_id)) - set(source_to_target_mapping.keys()):
+    unique_class_ids = np.unique(detections.class_id)
+    if not set(unique_class_ids).issubset(source_to_target_mapping.keys()):
         raise ValueError(
             "Detections class_id must be a subset of source_to_target_mapping keys."
         )
 
-    detections_copy = copy.deepcopy(detections)
+    # Create a shallow copy instead of deepcopy to avoid copying image data unnecessarily
+    detections_copy = copy.copy(detections)
 
     if len(detections) > 0:
         detections_copy.class_id = np.vectorize(source_to_target_mapping.get)(
-            detections_copy.class_id
+            detections.class_id
         )
 
     return detections_copy

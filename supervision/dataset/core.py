@@ -286,16 +286,19 @@ class DetectionDataset(BaseDataset):
         def is_lazy(dataset: DetectionDataset) -> bool:
             return len(dataset._images_in_memory) == 0
 
-        all_in_memory = all([is_in_memory(dataset) for dataset in dataset_list])
-        all_lazy = all([is_lazy(dataset) for dataset in dataset_list])
-        if not all_in_memory and not all_lazy:
+        if not (
+            all(is_in_memory(dataset) for dataset in dataset_list)
+            or all(is_lazy(dataset) for dataset in dataset_list)
+        ):
             raise ValueError(
                 "Merging lazy and in-memory DetectionDatasets is not supported."
             )
 
-        images_in_memory = {}
-        for dataset in dataset_list:
-            images_in_memory.update(dataset._images_in_memory)
+        images_in_memory = {
+            image_path: image
+            for dataset in dataset_list
+            for image_path, image in dataset._images_in_memory.items()
+        }
 
         image_paths = list(
             chain.from_iterable(dataset.image_paths for dataset in dataset_list)
@@ -306,23 +309,21 @@ class DetectionDataset(BaseDataset):
             raise ValueError(
                 f"Image paths {duplicates} are not unique across datasets."
             )
+
         image_paths = image_paths_unique
 
-        classes = merge_class_lists(
-            class_lists=[dataset.classes for dataset in dataset_list]
-        )
+        classes = merge_class_lists([dataset.classes for dataset in dataset_list])
 
-        annotations = {}
+        annotations = {
+            image_path: annotation
+            for dataset in dataset_list
+            for image_path, annotation in dataset.annotations.items()
+        }
         for dataset in dataset_list:
-            annotations.update(dataset.annotations)
-        for dataset in dataset_list:
-            class_index_mapping = build_class_index_mapping(
-                source_classes=dataset.classes, target_classes=classes
-            )
+            class_index_mapping = build_class_index_mapping(dataset.classes, classes)
             for image_path in dataset.image_paths:
                 annotations[image_path] = map_detections_class_id(
-                    source_to_target_mapping=class_index_mapping,
-                    detections=annotations[image_path],
+                    class_index_mapping, annotations[image_path]
                 )
 
         return cls(
