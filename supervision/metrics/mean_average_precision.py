@@ -283,27 +283,41 @@ class MeanAveragePrecision(Metric):
         iou: np.ndarray,
         iou_thresholds: np.ndarray,
     ) -> np.ndarray:
-        num_predictions, num_iou_levels = (
-            predictions_classes.shape[0],
-            iou_thresholds.shape[0],
-        )
+        num_predictions = predictions_classes.shape[0]
+        num_iou_levels = iou_thresholds.shape[0]
+        # each row corresponds to a prediction and each col to an iou threshold level
         correct = np.zeros((num_predictions, num_iou_levels), dtype=bool)
+        # shape: (num_targets, num_predictions)
         correct_class = target_classes[:, None] == predictions_classes
 
-        for i, iou_level in enumerate(iou_thresholds):
-            matched_indices = np.where((iou >= iou_level) & correct_class)
+        for i, thresh in enumerate(iou_thresholds):
+            # find indices where both iou is high enough and classes match
+            mask = (iou >= thresh) & correct_class
+            if not mask.any():
+                continue
 
-            if matched_indices[0].shape[0]:
-                combined_indices = np.stack(matched_indices, axis=1)
-                iou_values = iou[matched_indices][:, None]
-                matches = np.hstack([combined_indices, iou_values])
+            # Get the match indices directly (targets, predictions)
+            target_idxs, pred_idxs = np.nonzero(mask)
+            # Corresponding iou scores
+            scores = iou[target_idxs, pred_idxs]
 
-                if matched_indices[0].shape[0] > 1:
-                    matches = matches[matches[:, 2].argsort()[::-1]]
-                    matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                    matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+            # sort by descending scores
+            order = np.argsort(scores)[::-1]
+            target_sorted = target_idxs[order]
+            pred_sorted = pred_idxs[order]
 
-                correct[matches[:, 1].astype(int), i] = True
+            # First, select unique predictions (the first occurrence is the highest score)
+            _, unique_pred_indices = np.unique(pred_sorted, return_index=True)
+            # Using these indices, get the matching target and prediction arrays
+            target_unique = target_sorted[unique_pred_indices]
+            pred_unique = pred_sorted[unique_pred_indices]
+
+            # Next, select unique targets ensuring one match per target:
+            _, unique_target_indices = np.unique(target_unique, return_index=True)
+            final_pred = pred_unique[unique_target_indices]
+
+            # Mark these predictions as correct for current threshold
+            correct[final_pred, i] = True
 
         return correct
 
