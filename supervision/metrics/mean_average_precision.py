@@ -109,6 +109,7 @@ class MeanAveragePrecision(Metric):
         Returns:
             (MeanAveragePrecision): The updated metric instance.
         """
+        # Ensure predictions and targets are lists.
         if not isinstance(predictions, list):
             predictions = [predictions]
         if not isinstance(targets, list):
@@ -121,13 +122,10 @@ class MeanAveragePrecision(Metric):
             )
 
         if self._class_agnostic:
-            predictions = deepcopy(predictions)
-            targets = deepcopy(targets)
-
-            for prediction in predictions:
-                prediction.class_id[:] = -1
-            for target in targets:
-                target.class_id[:] = -1
+            predictions = [
+                self._make_class_agnostic(detection) for detection in predictions
+            ]
+            targets = [self._make_class_agnostic(detection) for detection in targets]
 
         self._predictions_list.extend(predictions)
         self._targets_list.extend(targets)
@@ -415,6 +413,20 @@ class MeanAveragePrecision(Metric):
                 new_detections.data[key] = np.array(value)[size_mask]
 
         return new_detections
+
+    def _make_class_agnostic(self, detection: Detections) -> Detections:
+        """
+        Returns a copy of the detection with its class_id field reset to -1.
+
+        Tries to use a fast copy method if available, otherwise falls back to deepcopy.
+        """
+        # Attempt to use a possible fast copy method
+        try:
+            new_detection = detection.copy()  # type: ignore
+        except AttributeError:
+            new_detection = deepcopy(detection)
+        new_detection.class_id[:] = -1
+        return new_detection
 
 
 @dataclass
