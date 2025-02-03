@@ -93,12 +93,10 @@ def images_to_cv2(images: List[ImageType]) -> List[np.ndarray]:
             (with order preserved).
 
     """
-    result = []
-    for image in images:
-        if issubclass(type(image), Image.Image):
-            image = pillow_to_cv2(image)
-        result.append(image)
-    return result
+    return [
+        pillow_to_cv2(image) if isinstance(image, Image.Image) else image
+        for image in images
+    ]
 
 
 def pillow_to_cv2(image: Image.Image) -> np.ndarray:
@@ -112,7 +110,7 @@ def pillow_to_cv2(image: Image.Image) -> np.ndarray:
     Returns:
         (np.ndarray): Input image converted to OpenCV format.
     """
-    scene = np.array(image)
+    scene = np.asarray(image)
     scene = cv2.cvtColor(scene, cv2.COLOR_RGB2BGR)
     return scene
 
