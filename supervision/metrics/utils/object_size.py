@@ -57,15 +57,15 @@ def get_bbox_size_category(xyxy: npt.NDArray[np.float32]) -> npt.NDArray[np.int_
         (np.ndarray) The size category of each bounding box, matching
         the enum values of ObjectSizeCategory. Shaped (N,).
     """
-    if len(xyxy.shape) != 2 or xyxy.shape[1] != 4:
+    if xyxy.ndim != 2 or xyxy.shape[1] != 4:
         raise ValueError("Bounding boxes must be shaped (N, 4)")
 
     width = xyxy[:, 2] - xyxy[:, 0]
     height = xyxy[:, 3] - xyxy[:, 1]
     areas = width * height
 
-    result = np.full(areas.shape, ObjectSizeCategory.ANY.value)
     SM, LG = SIZE_THRESHOLDS
+    result = np.empty(areas.shape, dtype=np.int_)
     result[areas < SM] = ObjectSizeCategory.SMALL.value
     result[(areas >= SM) & (areas < LG)] = ObjectSizeCategory.MEDIUM.value
     result[areas >= LG] = ObjectSizeCategory.LARGE.value
