@@ -118,17 +118,21 @@ class Recall(Metric):
         Returns:
             (Recall): The updated metric instance.
         """
-        if not isinstance(predictions, list):
+
+        # Ensure both predictions and targets are lists
+        if isinstance(predictions, Detections):
             predictions = [predictions]
-        if not isinstance(targets, list):
+        if isinstance(targets, Detections):
             targets = [targets]
 
+        # Validate that the lengths match
         if len(predictions) != len(targets):
             raise ValueError(
                 f"The number of predictions ({len(predictions)}) and"
                 f" targets ({len(targets)}) during the update must be the same."
             )
 
+        # Extend the lists with a single call each
         self._predictions_list.extend(predictions)
         self._targets_list.extend(targets)
 
