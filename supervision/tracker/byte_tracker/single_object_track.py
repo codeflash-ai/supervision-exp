@@ -152,13 +152,11 @@ class STrack:
         """Convert bounding box to format `(center x, center y, aspect ratio,
         height)`, where the aspect ratio is `width / height`.
         """
-        ret = np.asarray(tlwh).copy()
-        ret[:2] += ret[2:] / 2
-        ret[2] /= ret[3]
-        return ret
+        cx, cy, w, h = tlwh
+        return np.array([cx + w / 2, cy + h / 2, w / h, h], dtype=np.float32)
 
     def to_xyah(self) -> npt.NDArray[np.float32]:
-        return self.tlwh_to_xyah(self.tlwh)
+        return self.tlwh_to_xyah(self._tlwh)
 
     @staticmethod
     def tlbr_to_tlwh(tlbr) -> npt.NDArray[np.float32]:
