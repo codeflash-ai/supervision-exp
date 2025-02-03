@@ -175,7 +175,16 @@ class CSVSink:
     def parse_field_names(
         detections: Detections, custom_data: Dict[str, Any]
     ) -> List[str]:
-        dynamic_header = sorted(
-            set(custom_data.keys()) | set(getattr(detections, "data", {}).keys())
-        )
-        return BASE_HEADER + dynamic_header
+        # Get detection's data attribute once.
+        detection_data = getattr(detections, "data", None)
+        # If neither custom_data nor detection_data provide additional keys, return base header.
+        if not custom_data and not detection_data:
+            return BASE_HEADER
+
+        # Create union of keys from custom_data and detection_data (if available)
+        keys_union = set(custom_data)
+        if detection_data:
+            keys_union.update(detection_data)
+
+        # Return the base header joined with the sorted dynamic header.
+        return BASE_HEADER + sorted(keys_union)
