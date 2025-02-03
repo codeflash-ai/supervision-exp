@@ -106,34 +106,44 @@ class CSVSink:
     def parse_detection_data(
         detections: Detections, custom_data: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        parsed_rows = []
-        for i in range(len(detections.xyxy)):
+        # Cache repeated attributes for performance
+        xyxy = detections.xyxy
+        count = len(xyxy)
+        # Pre-assign class_ids, confidences and tracker_ids (or None) to reduce attribute lookups
+        class_ids = detections.class_id
+        confidences = detections.confidence
+        tracker_ids = detections.tracker_id
+        has_data = hasattr(detections, "data")
+        data_attr = detections.data if has_data else None
+        custom = custom_data if custom_data is not None else None
+
+        parsed_rows = [None] * count  # preallocate list for performance
+
+        for i, coords in enumerate(xyxy):
+            x_min, y_min, x_max, y_max = coords
             row = {
-                "x_min": detections.xyxy[i][0],
-                "y_min": detections.xyxy[i][1],
-                "x_max": detections.xyxy[i][2],
-                "y_max": detections.xyxy[i][3],
-                "class_id": ""
-                if detections.class_id is None
-                else str(detections.class_id[i]),
-                "confidence": ""
-                if detections.confidence is None
-                else str(detections.confidence[i]),
-                "tracker_id": ""
-                if detections.tracker_id is None
-                else str(detections.tracker_id[i]),
+                "x_min": x_min,
+                "y_min": y_min,
+                "x_max": x_max,
+                "y_max": y_max,
+                "class_id": "" if class_ids is None else str(class_ids[i]),
+                "confidence": "" if confidences is None else str(confidences[i]),
+                "tracker_id": "" if tracker_ids is None else str(tracker_ids[i]),
             }
 
-            if hasattr(detections, "data"):
-                for key, value in detections.data.items():
-                    if value.ndim == 0:
-                        row[key] = value
-                    else:
+            if has_data:
+                # Process additional data fields
+                for key, value in data_attr.items():
+                    # Check if the value is scalar (ndim==0) or not
+                    if hasattr(value, "ndim") and value.ndim != 0:
                         row[key] = value[i]
+                    else:
+                        row[key] = value
 
-            if custom_data:
-                row.update(custom_data)
-            parsed_rows.append(row)
+            if custom:
+                row.update(custom)
+            parsed_rows[i] = row
+
         return parsed_rows
 
     def append(
