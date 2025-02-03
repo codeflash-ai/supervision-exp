@@ -291,19 +291,28 @@ class MeanAveragePrecision(Metric):
         correct_class = target_classes[:, None] == predictions_classes
 
         for i, iou_level in enumerate(iou_thresholds):
-            matched_indices = np.where((iou >= iou_level) & correct_class)
+            matches = (iou >= iou_level) & correct_class
 
-            if matched_indices[0].shape[0]:
-                combined_indices = np.stack(matched_indices, axis=1)
-                iou_values = iou[matched_indices][:, None]
-                matches = np.hstack([combined_indices, iou_values])
+            if matches.any():
+                matched_indices = np.where(matches)
+                combined_indices = np.vstack(matched_indices)
+                iou_values = iou[matched_indices]
 
-                if matched_indices[0].shape[0] > 1:
-                    matches = matches[matches[:, 2].argsort()[::-1]]
-                    matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                    matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+                # Sort by IoU values in descending order
+                sorted_indices = np.argsort(-iou_values)
+                sorted_combined = combined_indices[:, sorted_indices]
+                sorted_combined_iou = iou_values[sorted_indices]
 
-                correct[matches[:, 1].astype(int), i] = True
+                # Deduplicate based on target index
+                _, unique_indices = np.unique(sorted_combined[1], return_index=True)
+                dedup_combined = sorted_combined[:, unique_indices]
+                dedup_combined_iou = sorted_combined_iou[unique_indices]
+
+                # Deduplicate based on prediction index
+                _, unique_indices = np.unique(dedup_combined[0], return_index=True)
+                final_combined = dedup_combined[:, unique_indices]
+
+                correct[final_combined[1].astype(int), i] = True
 
         return correct
 
