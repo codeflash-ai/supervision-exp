@@ -332,7 +332,12 @@ def joint_tracks(
     seen_track_ids = set()
     result = []
 
-    for track in track_list_a + track_list_b:
+    for track in track_list_a:
+        if track.internal_track_id not in seen_track_ids:
+            seen_track_ids.add(track.internal_track_id)
+            result.append(track)
+
+    for track in track_list_b:
         if track.internal_track_id not in seen_track_ids:
             seen_track_ids.add(track.internal_track_id)
             result.append(track)
