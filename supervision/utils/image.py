@@ -34,55 +34,24 @@ def crop_image(
     Crops the given image based on the given bounding box.
 
     Args:
-        image (ImageType): The image to be cropped. `ImageType` is a flexible type,
-            accepting either `numpy.ndarray` or `PIL.Image.Image`.
-        xyxy (Union[np.ndarray, List[int], Tuple[int, int, int, int]]): A bounding box
-            coordinates in the format `(x_min, y_min, x_max, y_max)`, accepted as either
-            a `numpy.ndarray`, a `list`, or a `tuple`.
+        image (ImageType): The image to be cropped.
+        xyxy (Union[np.ndarray, List, Tuple]): A bounding box coordinates in the format
+            (x_min, y_min, x_max, y_max). Coordinates can be supplied as a np.ndarray,
+            list, or tuple.
 
     Returns:
-        (ImageType): The cropped image. The type is determined by the input type and
-            may be either a `numpy.ndarray` or `PIL.Image.Image`.
+        ImageType: The cropped image.
+    """
+    if isinstance(xyxy, np.ndarray):
+        # If the dtype is not an integer, perform rounding and casting.
+        if not np.issubdtype(xyxy.dtype, np.integer):
+            xyxy = np.rint(xyxy).astype(int)
+        # Flatten the array if needed
+        x_min, y_min, x_max, y_max = xyxy.flat[:4]
+    else:
+        # Directly compute integers from list or tuple items.
+        x_min, y_min, x_max, y_max = tuple(int(round(c)) for c in xyxy)
 
-    === "OpenCV"
-
-        ```python
-        import cv2
-        import supervision as sv
-
-        image = cv2.imread(<SOURCE_IMAGE_PATH>)
-        image.shape
-        # (1080, 1920, 3)
-
-        xyxy = [200, 400, 600, 800]
-        cropped_image = sv.crop_image(image=image, xyxy=xyxy)
-        cropped_image.shape
-        # (400, 400, 3)
-        ```
-
-    === "Pillow"
-
-        ```python
-        from PIL import Image
-        import supervision as sv
-
-        image = Image.open(<SOURCE_IMAGE_PATH>)
-        image.size
-        # (1920, 1080)
-
-        xyxy = [200, 400, 600, 800]
-        cropped_image = sv.crop_image(image=image, xyxy=xyxy)
-        cropped_image.size
-        # (400, 400)
-        ```
-
-    ![crop_image](https://media.roboflow.com/supervision-docs/crop-image.png){ align=center width="800" }
-    """  # noqa E501 // docs
-
-    if isinstance(xyxy, (list, tuple)):
-        xyxy = np.array(xyxy)
-    xyxy = np.round(xyxy).astype(int)
-    x_min, y_min, x_max, y_max = xyxy.flatten()
     return image[y_min:y_max, x_min:x_max]
 
 
