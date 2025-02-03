@@ -352,13 +352,10 @@ def sub_tracks(track_list_a: List[STrack], track_list_b: List[STrack]) -> List[i
     Returns:
         List of remaining tracks from track_list_a after subtraction.
     """
-    tracks = {track.internal_track_id: track for track in track_list_a}
     track_ids_b = {track.internal_track_id for track in track_list_b}
-
-    for track_id in track_ids_b:
-        tracks.pop(track_id, None)
-
-    return list(tracks.values())
+    return [
+        track for track in track_list_a if track.internal_track_id not in track_ids_b
+    ]
 
 
 def remove_duplicate_tracks(
