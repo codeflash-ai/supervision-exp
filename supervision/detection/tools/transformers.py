@@ -26,13 +26,17 @@ def process_transformers_detection_result(
         dict: Processed detection result including bounding boxes, confidence scores,
               class IDs, and data.
     """
-    class_ids = detection_result["labels"].cpu().detach().numpy().astype(int)
-    data = append_class_names_to_data(class_ids, id2label, {})
+    # Convert all relevant tensors once
+    labels = detection_result["labels"].detach().cpu().numpy().astype(int)
+    boxes = detection_result["boxes"].detach().cpu().numpy()
+    scores = detection_result["scores"].detach().cpu().numpy()
+
+    data = append_class_names_to_data(labels, id2label, {})
 
     return dict(
-        xyxy=detection_result["boxes"].cpu().detach().numpy(),
-        confidence=detection_result["scores"].cpu().detach().numpy(),
-        class_id=class_ids,
+        xyxy=boxes,
+        confidence=scores,
+        class_id=labels,
         data=data,
     )
 
@@ -241,7 +245,13 @@ def append_class_names_to_data(
         data = {}
 
     if id2label is not None:
-        class_names = np.array([id2label[class_id] for class_id in class_ids])
-        data[CLASS_NAME_DATA_FIELD] = class_names
-
+        # Use a lookup table to vectorize the mapping if possible.
+        # Create an array of appropriate size where indices correspond to class IDs.
+        max_key = max(id2label.keys())
+        lookup = np.empty(max_key + 1, dtype=object)
+        for key, name in id2label.items():
+            lookup[key] = name
+        # Use the lookup array for vectorized mapping. This assumes the IDs in class_ids
+        # do not exceed max_key.
+        data[CLASS_NAME_DATA_FIELD] = lookup[class_ids]
     return data
