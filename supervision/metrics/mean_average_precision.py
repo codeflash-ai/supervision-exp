@@ -121,13 +121,10 @@ class MeanAveragePrecision(Metric):
             )
 
         if self._class_agnostic:
-            predictions = deepcopy(predictions)
-            targets = deepcopy(targets)
-
             for prediction in predictions:
-                prediction.class_id[:] = -1
+                prediction.class_id.fill(-1)
             for target in targets:
-                target.class_id[:] = -1
+                target.class_id.fill(-1)
 
         self._predictions_list.extend(predictions)
         self._targets_list.extend(targets)
