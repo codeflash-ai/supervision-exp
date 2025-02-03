@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from operator import itemgetter
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Tuple
 
@@ -26,8 +27,7 @@ if TYPE_CHECKING:
 
 def coco_categories_to_classes(coco_categories: List[dict]) -> List[str]:
     return [
-        category["name"]
-        for category in sorted(coco_categories, key=lambda category: category["id"])
+        category["name"] for category in sorted(coco_categories, key=itemgetter("id"))
     ]
 
 
