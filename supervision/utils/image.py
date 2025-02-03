@@ -36,7 +36,7 @@ def crop_image(
     Args:
         image (ImageType): The image to be cropped. `ImageType` is a flexible type,
             accepting either `numpy.ndarray` or `PIL.Image.Image`.
-        xyxy (Union[np.ndarray, List[int], Tuple[int, int, int, int]]): A bounding box
+        xyxy (Union[npt.NDArray[int], List[int], Tuple[int, int, int, int]]): A bounding box
             coordinates in the format `(x_min, y_min, x_max, y_max)`, accepted as either
             a `numpy.ndarray`, a `list`, or a `tuple`.
 
@@ -45,44 +45,24 @@ def crop_image(
             may be either a `numpy.ndarray` or `PIL.Image.Image`.
 
     === "OpenCV"
-
-        ```python
-        import cv2
-        import supervision as sv
-
-        image = cv2.imread(<SOURCE_IMAGE_PATH>)
-        image.shape
-        # (1080, 1920, 3)
-
-        xyxy = [200, 400, 600, 800]
-        cropped_image = sv.crop_image(image=image, xyxy=xyxy)
-        cropped_image.shape
-        # (400, 400, 3)
-        ```
+        ...
 
     === "Pillow"
-
-        ```python
-        from PIL import Image
-        import supervision as sv
-
-        image = Image.open(<SOURCE_IMAGE_PATH>)
-        image.size
-        # (1920, 1080)
-
-        xyxy = [200, 400, 600, 800]
-        cropped_image = sv.crop_image(image=image, xyxy=xyxy)
-        cropped_image.size
-        # (400, 400)
-        ```
+        ...
 
     ![crop_image](https://media.roboflow.com/supervision-docs/crop-image.png){ align=center width="800" }
     """  # noqa E501 // docs
 
-    if isinstance(xyxy, (list, tuple)):
-        xyxy = np.array(xyxy)
-    xyxy = np.round(xyxy).astype(int)
-    x_min, y_min, x_max, y_max = xyxy.flatten()
+    if isinstance(xyxy, np.ndarray):
+        xyxy = np.round(xyxy).astype(int)
+        x_min, y_min, x_max, y_max = xyxy.flatten()
+    elif isinstance(xyxy, (list, tuple)):
+        x_min, y_min, x_max, y_max = map(int, map(round, xyxy))
+    else:
+        raise TypeError(
+            "Unsupported type for 'xyxy'. Expected numpy.ndarray, list, or tuple."
+        )
+
     return image[y_min:y_max, x_min:x_max]
 
 
